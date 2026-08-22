@@ -1,0 +1,10 @@
+Model,Accuracy,Precision,Recall,F1-score,ROC-AUC,CV ROC-AUC (mean),CV ROC-AUC (std)
+Logistic Regression,0.890,0.816,0.861,0.838,0.951,N/A,N/A
+Random Forest (all features),0.917,0.966,0.778,0.862,0.949,0.961,0.01
+XGBoost (all features),0.936,0.968,0.833,0.896,0.956,0.954,0.018
+Random Forest (top 10 features),0.917,0.909,0.833,0.870,0.943,N/A,N/A
+Random Forest (untouched holdout check),0.902,0.828,0.889,0.857,0.984,N/A,N/A
+Random Forest (tuned),0.899,0.963,0.722,0.825,0.942,N/A,N/A
+XGBoost (tuned),0.899,0.903,0.778,0.836,0.955,N/A,N/A
+Random Forest + SMOTE,0.899,0.879,0.806,0.841,0.933,N/A,N/A
+Ensemble (tuned RF + XGBoost),0.908,0.933,0.778,0.848,0.951,N/A,N/A

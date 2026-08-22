@@ -1,0 +1,11 @@
+Feature,Mean |SHAP value| (RF)
+Follicle No. (R),0.0935
+Follicle No. (L),0.0802
+Weight gain(Y/N),0.0455
+Skin darkening (Y/N),0.0452
+hair growth(Y/N),0.0406
+Cycle length(days),0.0224
+AMH(ng/mL),0.0217
+Cycle(R/I),0.0207
+Fast food (Y/N),0.0140
+Pimples(Y/N),0.0132
