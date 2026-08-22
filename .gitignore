@@ -1,0 +1,26 @@
+# Data files (do not commit patient data)
+*.xlsx
+*.csv
+
+# Trained model artifacts (regenerate from notebook, or use Git LFS if large)
+*.pkl
+
+# LaTeX build artifacts
+*.aux
+*.log
+*.out
+*.toc
+paper/*.aux
+paper/*.log
+paper/*.out
+
+# Python
+__pycache__/
+*.pyc
+.ipynb_checkpoints/
+venv/
+.venv/
+
+# OS files
+.DS_Store
+Thumbs.db
