@@ -1,33 +1,61 @@
-import streamlit as st
-import pandas as pd
+import json
+from pathlib import Path
+
 import joblib
+import pandas as pd
+import streamlit as st
 
 # ============================================================
-# Load the trained model and expected feature order
-# (these .pkl files must sit in the same folder as this app.py)
+# Load the v2 model, feature order, and threshold
+# (all three files must sit in the same folder as this app.py)
 # ============================================================
-model = joblib.load("pcos_reduced_model.pkl")
-feature_order = joblib.load("pcos_feature_order.pkl")
+BASE = Path(__file__).parent
 
-# Classification threshold chosen during development to prioritize recall
-# (catches ~92% of true PCOS cases at ~80% precision - see project notebook)
-THRESHOLD = 0.345
 
-st.set_page_config(page_title="PCOS Risk Estimator", page_icon="🩺", layout="centered")
+def find_file(*prefixes, suffix=".pkl"):
+    """Find a saved file even if GitHub/Windows added '(2)' to its name."""
+    for prefix in prefixes:
+        exact = BASE / f"{prefix}{suffix}"
+        if exact.exists():
+            return exact
+    for prefix in prefixes:
+        matches = sorted(BASE.glob(f"{prefix}*{suffix}"))
+        if matches:
+            return matches[0]
+    raise FileNotFoundError(f"No file found for {prefixes} in {BASE}")
 
-st.title("PCOS Risk Estimator")
-st.caption("Research prototype — 10-feature Random Forest model")
+
+@st.cache_resource
+def load_artifacts():
+    model = joblib.load(find_file("pmos_reduced_model", "pcos_reduced_model"))
+    features = joblib.load(find_file("pmos_feature_order", "pcos_feature_order"))
+    thr = json.load(open(find_file("pmos_threshold", suffix=".json")))["threshold"]
+    return model, list(features), float(thr)
+
+
+model, feature_order, THRESHOLD = load_artifacts()
+
+# How "Cycle(R/I)" is coded in the training data. The public dataset codes
+# regular = 2 and irregular = 4. Check with df["Cycle(R/I)"].value_counts()
+# in the notebook and change these two numbers if your data differs.
+CYCLE_REGULAR = 2
+CYCLE_IRREGULAR = 4
+
+st.set_page_config(page_title="PMOS Risk Estimator", page_icon="🩺", layout="centered")
+
+st.title("PMOS (formerly PCOS) Risk Estimator")
+st.caption("Research prototype — 10-feature Random Forest model (v2)")
 
 st.warning(
     "⚠️ **This is a research prototype, not a diagnostic tool.** "
-    "It was trained on a single dataset of 541 patients and has not been clinically "
-    "validated. Do not use this to make real medical decisions — please consult a "
-    "qualified healthcare provider for PCOS diagnosis and treatment."
+    "It was trained on a single public dataset of 541 patients and has not been clinically "
+    "validated. Do not use it to make real medical decisions — please consult a "
+    "qualified healthcare provider for diagnosis and treatment."
 )
 
 st.write(
-    "Enter the values below. These are the 10 features identified as most predictive "
-    "of PCOS by SHAP feature-importance analysis in the underlying research project."
+    "Enter the values below. These are the 10 features ranked most important by SHAP "
+    "feature-importance analysis in the underlying research project."
 )
 
 st.divider()
@@ -35,7 +63,7 @@ st.divider()
 # ============================================================
 # Input form
 # ============================================================
-with st.form("pcos_form"):
+with st.form("pmos_form"):
     col1, col2 = st.columns(2)
 
     with col1:
@@ -63,13 +91,13 @@ with st.form("pcos_form"):
         fast_food = st.radio("Frequent fast food consumption?", ["No", "Yes"], horizontal=True)
         pimples = st.radio("Frequent acne/pimples?", ["No", "Yes"], horizontal=True)
 
-    submitted = st.form_submit_button("Estimate PCOS Likelihood", use_container_width=True)
+    submitted = st.form_submit_button("Estimate PMOS Likelihood", use_container_width=True)
 
 # ============================================================
 # Prediction
 # ============================================================
 if submitted:
-    # Map form inputs to the exact feature names/order the model expects
+    # Map form inputs to the exact feature names the model was trained on
     input_dict = {
         "Follicle No. (R)": follicle_r,
         "Follicle No. (L)": follicle_l,
@@ -78,44 +106,54 @@ if submitted:
         "hair growth(Y/N)": 1 if hair_growth == "Yes" else 0,
         "Cycle length(days)": cycle_length,
         "AMH(ng/mL)": amh,
-        "Cycle(R/I)": 1 if cycle_regularity == "Irregular" else 0,
+        "Cycle(R/I)": CYCLE_IRREGULAR if cycle_regularity == "Irregular" else CYCLE_REGULAR,
         "Fast food (Y/N)": 1 if fast_food == "Yes" else 0,
         "Pimples(Y/N)": 1 if pimples == "Yes" else 0,
     }
 
-    # Build the input row in the exact order the model was trained on
-    input_df = pd.DataFrame([[input_dict[feat] for feat in feature_order]], columns=feature_order)
+    missing = [f for f in feature_order if f not in input_dict]
+    if missing:
+        st.error(f"The model expects features this form does not collect: {missing}")
+        st.stop()
 
-    probability = model.predict_proba(input_df)[0, 1]
-    prediction = "PCOS Likely" if probability >= THRESHOLD else "PCOS Unlikely"
+    # Build the input row in the exact order the model was trained on
+    input_df = pd.DataFrame([[input_dict[f] for f in feature_order]], columns=feature_order)
+
+    probability = float(model.predict_proba(input_df)[0, 1])
+    prediction = "PMOS Likely" if probability >= THRESHOLD else "PMOS Unlikely"
 
     st.divider()
     st.subheader("Result")
 
-    if prediction == "PCOS Likely":
-        st.error(f"**{prediction}** — estimated probability: {probability:.1%}")
+    if prediction == "PMOS Likely":
+        st.error(f"**{prediction}** — model score: {probability:.0%}")
     else:
-        st.success(f"**{prediction}** — estimated probability: {probability:.1%}")
+        st.success(f"**{prediction}** — model score: {probability:.0%}")
 
-    st.progress(min(float(probability), 1.0))
+    st.progress(min(probability, 1.0))
 
     st.caption(
-        f"Classification threshold used: {THRESHOLD:.1%} "
-        "(optimized during development to prioritize catching true cases, "
-        "at some cost to false-positive rate)."
+        f"Decision threshold: {THRESHOLD:.3f}. It was chosen on validation data to find at least "
+        "90% of true cases, which means more false alarms (on average, recall about 0.90 and "
+        "precision about 0.74 across 30 test splits)."
+    )
+    st.caption(
+        "The score is a rough guide, not an exact percentage. In our calibration analysis, "
+        "Random Forest probabilities were less reliable than those of Logistic Regression."
     )
 
     with st.expander("What do these numbers mean?"):
         st.write(
-            "This estimate comes from a Random Forest model trained on 541 patients, "
-            "using only the 10 clinical features shown above out of 40+ originally available "
-            "— chosen because they retained equivalent predictive performance "
-            "(statistically indistinguishable, p = 0.89) to the full feature set, "
-            "making this a more practical, lower-cost screening approach."
+            "This result comes from a Random Forest model trained on 541 patients, using only "
+            "the 10 features shown above out of 39 available. In our tests, no significant "
+            "difference in performance was found between this 10-feature model and the full "
+            "39-feature model (p = 0.97). The model relies strongly on follicle counts from "
+            "ultrasound; when ultrasound features were removed, performance dropped clearly."
         )
 
 st.divider()
 st.caption(
-    "Built as part of a research project on explainable machine learning for PCOS "
-    "screening. Model: Random Forest, ROC-AUC ≈ 0.94 on held-out test data."
+    "Built as part of a research project on explainable machine learning for PMOS (formerly PCOS) "
+    "screening. Model: Random Forest, mean ROC-AUC ≈ 0.95 over 30 random test splits "
+    "(single final test: 0.91, 95% CI 0.79–0.99)."
 )
